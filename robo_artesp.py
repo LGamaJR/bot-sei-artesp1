@@ -1,88 +1,82 @@
 import pandas as pd
-import os
-import time
 from handler import SeleniumHandler
+import os
+from datetime import datetime
+from tqdm import tqdm # Biblioteca para a barra de progresso
 
-def executar():
-    arquivo_lista = "processos.txt"
-    arquivo_saida = "Relatorio_Final_ARTESP.xlsx"
+def executar_automacao():
+    # 1. Carregamento dos processos
+    try:
+        if not os.path.exists("processos.txt"):
+            print("❌ Arquivo processos.txt não encontrado!")
+            return
 
-    # 1. Verifica se o arquivo de texto existe
-    if not os.path.exists(arquivo_lista):
-        print(f"❌ Erro: O arquivo '{arquivo_lista}' não foi encontrado.")
+        with open("processos.txt", "r") as f:
+            lista_processos = [linha.strip() for linha in f if linha.strip()]
+    except Exception as e:
+        print(f"❌ Erro ao ler arquivo: {e}")
         return
 
-    # 2. Lê a lista de processos
-    with open(arquivo_lista, "r") as f:
-        lista_processos = [linha.strip() for linha in f if linha.strip()]
-
     if not lista_processos:
-        print("⚠️ A lista de processos está vazia.")
+        print("⚠️ A lista no TXT está vazia!")
         return
 
     resultados = []
-
-    # 3. Inicia a automação
-    with SeleniumHandler() as bot:
-        print(f"🚀 Iniciando processamento de {len(lista_processos)} processos...")
-        
-        for i, num_proc in enumerate(lista_processos):
-            print(f"🔄 [{i+1}/{len(lista_processos)}] Processando: {num_proc}")
-            
-            if bot.buscar_processo(num_proc):
-                info = bot.clicar_e_extrair()
-            else:
-                info = "❌ Erro na busca (Campo não localizado)"
-            
-            print(f"   ✅ Resultado: {info}")
-            
-            resultados.append({
-                "Processo": num_proc, 
-                "Especificação": info
-            })
-            
-            # Pequena pausa para o servidor da ARTESP "respirar"
-            time.sleep(2)
-
-    # 4. Salvamento Final com Ajuste Automático de Colunas
-    print("\n" + "="*30)
-    print("💾 Formatando e salvando arquivo final...")
+    total = len(lista_processos)
     
-    try:
-        # Usando XlsxWriter como engine para permitir formatação de colunas
-        with pd.ExcelWriter(arquivo_saida, engine='xlsxwriter') as writer:
-            df_final = pd.DataFrame(resultados)
-            df_final.to_excel(writer, index=False, sheet_name='Relatorio')
-            
-            workbook  = writer.book
+    # Gerar carimbo de data e hora para o nome do arquivo
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    file_name = f"Relatorio_SEI_{timestamp}.xlsx"
+
+    print(f"\n🚀 Iniciando Robô SEI ARTESP")
+    print(f"📋 Total de processos: {total}")
+    print(f"📂 O resultado será salvo em: {file_name}\n")
+
+    # 2. Execução com Barra de Progresso
+    with SeleniumHandler() as bot:
+        # tqdm cria a barra visual no terminal
+        for num_proc in tqdm(lista_processos, desc="Processando", unit="proc"):
+            try:
+                if bot.buscar_processo(num_proc):
+                    info = bot.clicar_e_extrair()
+                    resultados.append({"Processo": num_proc, "Especificação": info})
+                else:
+                    resultados.append({"Processo": num_proc, "Especificação": "❌ Erro na busca"})
+            except Exception:
+                resultados.append({"Processo": num_proc, "Especificação": "⚠️ Erro técnico"})
+
+    # 3. Salvamento Formatado
+    if resultados:
+        print(f"\n\n📊 Finalizando e formatando planilha...")
+        df = pd.DataFrame(resultados)
+        
+        with pd.ExcelWriter(file_name, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Relatorio')
+            workbook = writer.book
             worksheet = writer.sheets['Relatorio']
             
-            # Formato: Alinhado à esquerda e SEM quebra de linha (Single Line)
-            formato_celula = workbook.add_format({
-                'text_wrap': False, 
-                'align': 'left',
-                'valign': 'vcenter'
+            # Formato profissional
+            format_celula = workbook.add_format({
+                'align': 'left', 
+                'valign': 'vcenter', 
+                'text_wrap': False,
+                'border': 1
             })
             
-            # Ajusta largura da Coluna A (Processo)
-            worksheet.set_column('A:A', 25, formato_celula)
-            
-            # Ajusta largura da Coluna B (Especificação) com base no maior texto
-            # Calculamos o comprimento máximo ou definimos um mínimo de 50
-            if not df_final.empty:
-                largura_maxima = max(df_final['Especificação'].astype(str).map(len).max(), 50)
-                worksheet.set_column('B:B', largura_maxima + 2, formato_celula)
-            
-            print(f"💎 PROCESSO CONCLUÍDO COM SUCESSO!")
-            print(f"📊 Total: {len(resultados)} processos.")
-            print(f"📂 Arquivo gerado: {arquivo_saida}")
+            # Cabeçalho em negrito
+            format_header = workbook.add_format({
+                'bold': True,
+                'bg_color': '#D7E4BC',
+                'border': 1
+            })
 
-    except Exception as e:
-        print(f"⚠️ Erro ao salvar Excel formatado: {e}")
-        # Fallback simples caso o xlsxwriter não esteja instalado
-        pd.DataFrame(resultados).to_excel(arquivo_saida, index=False)
-    
-    print("="*30)
+            for i, col in enumerate(df.columns):
+                max_len = max(df[col].astype(str).map(len).max(), len(col)) + 4
+                worksheet.set_column(i, i, max_len, format_celula)
+                # Aplica o formato de cabeçalho manualmente na primeira linha
+                worksheet.write(0, i, col, format_header)
+                
+        print(f"💎 Trabalho concluído! Verifique o arquivo: {file_name}")
 
 if __name__ == "__main__":
-    executar()
+    executar_automacao()

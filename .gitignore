@@ -1,6 +1,14 @@
+_# Python
 __pycache__/
-*.xlsx
-*.log
-.env
+*.py[cod]
+*$py.class
+.venv/
 venv/
+
+# Excel e Logs
+Relatorio_SEI_*.xlsx
+processos.txt
+*.log
+
+# VS Code
 .vscode/
